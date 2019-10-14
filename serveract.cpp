@@ -9,7 +9,7 @@
 #include <unistd.h>
 //#include <thread>
 #include <pthread.h>
-
+#define CHUNKSIZE 512
 using namespace std;
 
 struct csData{
@@ -41,7 +41,7 @@ struct userInfoStruct
 
 struct groupFileUserStruct
 {
-	vector<string> fileslist;
+	vector<pair<string,int> > fileslist;
 	vector<string> userslist;
 	string groupOwner;
 	vector<string> pendingRequests;
@@ -76,7 +76,13 @@ int checkGroupIdExist(string gid)
 	return 0;
 }
 
-
+int userInGroup(string gid,string usr)
+{
+	if(find(groupFileUserMap.find(gid)->second->userslist.begin(),groupFileUserMap.find(gid)->second->userslist.end(),usr) != groupFileUserMap.find(gid)->second->userslist.end())
+		return 1;
+	return 0;
+	
+}
 
 void printMapUserDetailsMap()
 {
@@ -97,8 +103,8 @@ void printgroupFileUserMap()
 	{
 		cout<<"gid id "<<it->first<<endl;
 		cout<<"files list "<<endl;
-		for(vector<string>::iterator p=groupFileUserMap[it->first]->fileslist.begin(); p!=groupFileUserMap[it->first]->fileslist.end(); p++)
-			cout<<*p<<endl;
+		for(vector<pair<string,int>>::iterator p=groupFileUserMap[it->first]->fileslist.begin(); p!=groupFileUserMap[it->first]->fileslist.end(); p++)
+			cout<<p->first<<" "<<p->second<<endl;
 		cout<<"users list"<<endl;
 		for(vector<string>::iterator p1=groupFileUserMap[it->first]->userslist.begin(); p1!=groupFileUserMap[it->first]->userslist.end(); p1++)
 			cout<<*p1<<endl;
@@ -108,6 +114,20 @@ void printgroupFileUserMap()
 
 	}
 
+}
+
+void printgroupFileMap()
+{
+	cout<<"in groupFileMap:"<<endl;
+	for(unordered_map<string,struct groupFileStruct*>::iterator it=groupFileMap.begin(); it!=groupFileMap.end(); it++)
+	{
+		cout<<"group+filename "<<it->first<<endl;
+		cout<<"sha "<<it->second->sha<<endl;
+		cout<<"filesize "<<it->second->filesize<<endl;
+		cout<<"list of clients"<<endl;
+		for(vector<string>::iterator im=it->second->clientWithFiles.begin(); im!=it->second->clientWithFiles.end(); im++)
+			cout<<*im<<endl;
+	}
 }
 
 void* clientRequestServe(void* threadarg)
@@ -245,31 +265,31 @@ void* clientRequestServe(void* threadarg)
 		}
 
 		else if(strcmp(comm,"leave_group") == 0)
-		{	char* msg;
-			string gid=strtok(NULL," ");
-			if(!checkGroupIdExist(gid))
-			{	msg="Group Id Doesn't Exists";
-				// cout<<msg<<endl;
-				memset(command,'\0',sizeof(command));
-				send(connectfd,msg,2048,0);
-				continue;
-			}
-			else
-			{	//remove user from users list in groupFileUserMap
-				auto it=groupFileUserMap.find(gid);
-				auto itr=find(it->second->userslist.begin(),it->second->userslist.end(),usr);
-				it->second->userslist.erase(itr);
-				//remove user from groupFile Map
-				for(unordered_map<string,struct groupFileStruct*>::iterator i=groupFileMap.begin(); i!=groupFileMap.end(); i++)
-				{
-					auto pp=find(i->second->clientWithFiles.begin(),i->second->clientWithFiles.end(),usr);
-					i->second->clientWithFiles.erase(pp);
-				}
-				printgroupFileUserMap();
-				msg="Left Group Successfully";
-				memset(command,'\0',sizeof(command));
-				send(connectfd,msg,2048,0);
-			}
+		{// {	char* msg;
+		// 	string gid=strtok(NULL," ");
+		// 	if(!checkGroupIdExist(gid))
+		// 	{	msg="Group Id Doesn't Exists";
+		// 		// cout<<msg<<endl;
+		// 		memset(command,'\0',sizeof(command));
+		// 		send(connectfd,msg,2048,0);
+		// 		continue;
+		// 	}
+		// 	else
+		// 	{	//remove user from users list in groupFileUserMap
+		// 		auto it=groupFileUserMap.find(gid);
+		// 		auto itr=find(it->second->userslist.begin(),it->second->userslist.end(),usr);
+		// 		it->second->userslist.erase(itr);
+		// 		//remove user from groupFile Map
+		// 		for(unordered_map<string,struct groupFileStruct*>::iterator i=groupFileMap.begin(); i!=groupFileMap.end(); i++)
+		// 		{
+		// 			auto pp=find(i->second->clientWithFiles.begin(),i->second->clientWithFiles.end(),usr);
+		// 			i->second->clientWithFiles.erase(pp);
+		// 		}
+		// 		printgroupFileUserMap();
+		// 		msg="Left Group Successfully";
+		// 		memset(command,'\0',sizeof(command));
+		// 		send(connectfd,msg,2048,0);
+		// 	}
 		}
 
 		else if(strcmp(comm,"list_requests")==0)
@@ -314,12 +334,12 @@ void* clientRequestServe(void* threadarg)
 				for(vector<string>::iterator ip=it->second->pendingRequests.begin(); ip!=it->second->pendingRequests.end(); ip++)
 				{	val=*ip;
 					send(connectfd,(char*)val.c_str(),val.length(),0);
-					recv(connectfd,&ack,ack,0);
+					recv(connectfd,&ack,sizeof(ack),0);
 				}
 				//recv(connectfd,&ack,ack,0);
 
 				send(connectfd,&ack,sizeof(ack),0);
-
+				//recv(connectfd,&ack,ack,0);
 				
 			}
 			
@@ -330,6 +350,7 @@ void* clientRequestServe(void* threadarg)
 		{	char* msg;
 			cout<<"in accept request"<<endl;
 			string gid=strtok(NULL," ");
+			string adduser=strtok(NULL," ");
 			if(!checkGroupIdExist(gid))
 			{	msg="Group Id Doesn't Exists";
 				// cout<<msg<<endl;
@@ -342,7 +363,7 @@ void* clientRequestServe(void* threadarg)
 				auto it=groupFileUserMap.find(gid);
 				auto itr=find(it->second->pendingRequests.begin(),it->second->pendingRequests.end(),usr);
 				it->second->pendingRequests.erase(itr);
-				it->second->userslist.push_back(usr);
+				it->second->userslist.push_back(adduser);
 				memset(command,'\0',sizeof(command));
 				printgroupFileUserMap();
 				send(connectfd,msg,2048,0);
@@ -352,52 +373,154 @@ void* clientRequestServe(void* threadarg)
 		}
 
 		else if(strcmp(comm,"list_groups")==0)
-		{
+		{	char* msg;
 			cout<<"list groups command"<<endl;
 			
+				memset(command,'\0',sizeof(command));
+				int n;
+				n=groupFileUserMap.size();
+				cout<<"n is"<<endl;
+				send(connectfd,&n,sizeof(n),0);
+				recv(connectfd,&ack,sizeof(ack),0);
+				for(unordered_map<string,struct groupFileUserStruct*>::iterator it=groupFileUserMap.begin(); it!=groupFileUserMap.end(); it++)
+				{	
+					send(connectfd,(char*)it->first.c_str(),it->first.length(),0);
+					recv(connectfd,&ack,sizeof(ack),0);
+				}
+				
+				send(connectfd,&ack,sizeof(ack),0);
+				
 		}
 
 		else if(strcmp(comm,"upload_file")==0)
-		{
+		{	string filen;
 			cout<<"in upload_file"<<endl;
 			// cout<<command<<endl;
-			// struct fileStruct *fs=(struct fileStruct*)malloc(sizeof(struct fileStruct));
-			// fs->filename=strtok(NULL," ");
-			// cout<<"filename is "<<fs->filename<<endl;
-			// string gid=strtok(NULL," ");
-			// cout<<"gid is "<<gid<<endl;
+			struct groupFileStruct *fs=(struct groupFileStruct*)malloc(sizeof(struct groupFileStruct));
+			filen=strtok(NULL," ");
+			cout<<"filename is "<<filen<<endl;
+			string gid=strtok(NULL," ");
+			cout<<"gid is "<<gid<<endl;
 			// fs->username=strtok(NULL," ");
 			// cout<<"username "<<fs->username<<endl;
-			// fs->size=strtok(NULL, " ");
-			// cout<<"size is "<<fs->size<<endl;
-			// send(connectfd,&ack,ack,0);
-			// string shacal="";
-			// char bufsha[25]={'\0'};
-			// int n;
-			// cout<<"receiving sha"<<endl;
-			// while(n=recv(connectfd,bufsha,25,0)>0)
-			// {	cout<<"n is "<<n<<endl;
-			// 	if(strcmp(bufsha,"end")==0)
-			// 		break;
-			// 	shacal+=bufsha;
-			// 	cout<<shacal<<endl;
-			// 	send(connectfd,&ack,sizeof(ack),0);
-			// }
-			// cout<<"length of received sha "<<shacal.length()<<endl;
-			// cout<<shacal<<endl;
-			// fs->sha=shacal;
-			// fs->clientip=
+			//if(!gid=)
+			//check for existnce of group
+			int p=3;
+			if(!checkGroupIdExist(gid)){
+				p=1;
+				cout<<"p sent "<<p<<endl;
+				send(connectfd,&p,sizeof(p),0);
+				continue;
+			}
+			else if(!userInGroup(gid,usr))
+			{
+				p=2;
+				cout<<"p sent is "<<p<<endl;
+				send(connectfd,&p,sizeof(p),0);
+				continue;
+			}
+			else
+			{	
+
+
+
+				cout<<"p sent is "<<p<<endl;
+				send(connectfd,&p,sizeof(p),0);
+				fs->filesize=strtok(NULL, " ");
+				cout<<"size is "<<fs->filesize<<endl;
+				memset(command,'\0',sizeof(command));
+				send(connectfd,&ack,ack,0);
+				string shacal="";
+				char bufsha[25]={'\0'};
+				int n;
+				cout<<"receiving sha"<<endl;
+				while(n=recv(connectfd,bufsha,25,0)>0)
+				{	cout<<"n is "<<n<<endl;
+					if(strcmp(bufsha,"end")==0)
+						break;
+					shacal+=bufsha;
+					cout<<shacal<<endl;
+					send(connectfd,&ack,sizeof(ack),0);
+				}
+				cout<<"length of received sha "<<shacal.length()<<endl;
+				cout<<shacal<<endl;
+				fs->sha=shacal;
+				fs->clientWithFiles.push_back(usr);
+				cout<<"Done"<<endl;
+				string hh=gid+filen;
+				//groupFileMap.insert({hh,fs});
+				//printgroupFileUserMap();
+				
+				int flagg=0;
+				auto iptr=groupFileUserMap.find(gid);
+				if(groupFileUserMap.find(gid)!=groupFileUserMap.end()){
+					vector<pair<string,int>> vect=groupFileUserMap[gid]->fileslist;
+					for(int i=0;i<vect.size();i++){
+						if(vect[i].first==filen){
+							vect[i].second=1;
+							flagg=1;
+							groupFileMap[hh]->clientWithFiles.push_back(usr);
+							break;
+						}
+					}
+					if(flagg==0){
+						(groupFileUserMap[gid]->fileslist).push_back(make_pair(filen,1));
+						groupFileMap.insert({hh,fs});
+					}
+				}
+				// auto pptr=find(iptr->second->fileslist.begin(),iptr->second->fileslist.end(),filen);
+				// if(pptr == iptr->second->fileslist.end())
+				// 	iptr->second->fileslist.push_back(make_pair(filen,1));
+				// else
+				// 	pptr->second=1;
+				printgroupFileUserMap();
+				cout<<"Print group filr map"<<endl;
+				printgroupFileMap();
+				send(connectfd,&ack,sizeof(ack),0);
+				cout<<"completed uploaded"<<endl;
+				// fs->clientip=
+			}
 		}
-		/*char filename[1024];
-		recv(connectfd,&filename,sizeof(filename),0);
-		cout<<filename<<" in serve request"<<endl;
-		FILE *fp=fopen(filename,"rb");
-		fseek(fp,0,SEEK_END);
-		int size=ftell(fp);
-		rewind(fp);
-		send(connectfd,&size,sizeof(size),0);
-		
-		fclose(fp);*/
+		/*else if(strcmp(comm,"download_file")==0)
+		{	char* filename;
+			char* gid;
+			gid=strtok(NULL," ");
+			filename=strtok(NULL," ");
+			//recv(connectfd,&filename,sizeof(filename),0);
+			cout<<filename<<" in serve request"<<endl;
+			FILE *fp=fopen(filename,"rb");
+			fseek(fp,0,SEEK_END);
+			int size=ftell(fp);
+			rewind(fp);
+			send(connectfd,&size,sizeof(size),0);
+			fclose(fp);
+			string filenamestr=filename;
+			string gidstr=gid;
+			int no_of_chunks=ceil((float)size/CHUNKSIZE);
+			int p=no_of_chunks;
+			cout<<"p is"<<p<<endl;
+			recv(connectfd,&ack,sizeof(ack),0);
+			//string compstr=filename+gid;
+			cout<<"ack received"<<endl;
+			cout<<gidstr+filenamestr<<"combo is"<<endl;
+			string send_sha=groupFileMap[gidstr+filenamestr]->sha;
+			cout<<send_sha<<endl;
+			int i=0;
+			while(p--)
+			{	cout<<"p is "<<p<<" i is "<<i<<endl;
+				string val=send_sha.substr(i,20);
+				cout<<"sending val"<<val<<endl;
+				send(connectfd,(char*)val.c_str(),val.length(),0);
+				i+=20;
+				recv(connectfd,&ack,sizeof(ack),0);
+			}
+			cout<<"number of clients is "<<groupFileMap[gidstr+filenamestr]->clientWithFiles.size()<<endl;
+			vector<string> list_of_clients=groupFileMap[gidstr+filenamestr]->clientWithFiles;
+			// for(int im=0; im<list_of_clients.size(); im++)
+			// 	cout<<list_of_clients[im]<<endl;
+			vector<pair<string,string>> list_of_ip;
+			for()
+		}*/
 		cout<<"execute command"<<endl;
 	}
 	close(connectfd);
@@ -440,18 +563,24 @@ void* serverFunc(void* threadarg)
 	int connectfd;
 	int i=0;
 	pthread_t threadarr[1000];
+
 	while((connectfd=accept(socketfd,(struct sockaddr*)&serveraddr,(socklen_t*)&addrlen)) > 0)
 	{	cout<<"entered"<<endl;
-		struct threadData th;
-		th.fd=connectfd;
+		//struct threadData *th=(struct threadData*)malloc(sizeof(struct threadData));
+		struct threadData *th=new threadData;
+		th->fd=connectfd;
 		char* ipclient=new char[INET_ADDRSTRLEN];
 		inet_ntop(AF_INET,&(serveraddr.sin_addr),ipclient,INET_ADDRSTRLEN);
-		th.cip=ipclient;
-		th.cport=to_string(ntohs(serveraddr.sin_port));
-		
+		th->cip=ipclient;
+		cout<<"sin port"<<serveraddr.sin_port<<endl;
+		cout<<"ntohs "<<ntohs(serveraddr.sin_port)<<endl;
+		th->cport=to_string(ntohs(serveraddr.sin_port));
+		//th->cport="123";
+		cout<<"ip "<<th->cip<<endl;
+		cout<<"port"<<th->cport<<endl;
 		//cout<<th.filename<<" craeting thread"<<endl;
 			
-		pthread_create(&threadarr[i],NULL,clientRequestServe,(void*)&th);
+		pthread_create(&threadarr[i],NULL,clientRequestServe,(void*)th);
 		pthread_detach(threadarr[i]);
 		i++;
 		

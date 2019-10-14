@@ -23,9 +23,16 @@ struct threadData{
 };
 
 struct csData{
-	int port;
+	int client_port;
+	string client_ip;
 	//string filename;
-	int clientport;
+	int tracker_port;
+	string tracker_ip;
+};
+
+struct serverData{
+	int server_port;
+	string server_ip;
 };
 
 struct clientHandleDetails
@@ -240,12 +247,12 @@ void* clientFunc(void* threadarg)
 	}
 	struct sockaddr_in serveraddr;
 	serveraddr.sin_family=AF_INET;
-	serveraddr.sin_port=htons(d->port);
-	serveraddr.sin_addr.s_addr=inet_addr("127.0.0.1");
+	serveraddr.sin_port=htons(d->tracker_port);
+	serveraddr.sin_addr.s_addr=inet_addr(d->tracker_ip.c_str());
 	struct sockaddr_in clientaddr;
 	clientaddr.sin_family=AF_INET;
-	clientaddr.sin_port=htons(4000);
-	clientaddr.sin_addr.s_addr=inet_addr("127.0.0.1");
+	clientaddr.sin_port=htons(d->client_port);
+	clientaddr.sin_addr.s_addr=inet_addr(d->client_ip.c_str());
 	if(setsockopt(socketfd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &nw, sizeof(nw)))
 	{
 		cout<<"set socket opt"<<endl;
@@ -374,15 +381,30 @@ void* clientFunc(void* threadarg)
 			}
 
 			else if(strcmp(comm,"list_groups")==0)
-			{
+			{	
 				send(socketfd,(char*)command.c_str(),command.length(),0);
+				
 				int n;
 				recv(socketfd,&n,sizeof(n),0);
+				//cout<<"n is "<<n<<endl;
+				send(socketfd,&ack,sizeof(ack),0);
+				while(n--)
+				{	memset(msg,'\0',2048);
+					recv(socketfd,&msg,2048,0);
+					cout<<msg<<endl;
+					
+					send(socketfd,&ack,sizeof(ack),0);
+				}
+				//cout<<"ack received "<<endl;
+				recv(socketfd,&ack,sizeof(ack),0);
+				//send(socketfd,&ack,sizeof(ack),0);
+				//}
 			}
 
 			else if(strcmp(comm,"upload_file")==0)
 			{
-				cout<<"entered download file command";
+				cout<<"entered upload file command";
+				//send(socketfd,(char*)command.c_str(),command.length(),0);
 				//string file_to_be_uploaded;
 				char* file_to_be_uploaded=strtok(NULL," ");
 				FILE *fp=fopen(file_to_be_uploaded,"rb");
@@ -391,42 +413,60 @@ void* clientFunc(void* threadarg)
 				rewind(fp);
 				//fclose(fp);
 				string shaRecv=sha256_of_chunks(fp,size);
-				string sendData=command+" "+username+" "+to_string(size);
+				string sendData=command+" "+to_string(size);
 				cout<<sendData<<endl;
 				cout<<shaRecv.length()<<" "<<shaRecv<<endl;
 				send(socketfd,(char*)sendData.c_str(),sendData.length(),0);
-				recv(socketfd,&ack,sizeof(ack),0);
-				//int n=shaRecv.length();
-				int i=0;
-				while(i!=shaRecv.length())
-				{	cout<<"sending "<<shaRecv.substr(i,20)<<endl;
-					send(socketfd,(char*)shaRecv.substr(i,20).c_str(),20,0);
-					recv(socketfd,&ack,sizeof(ack),0);
-					i+=20;
+				int m;
+				recv(socketfd,&m,sizeof(m),0);
+				if(m==1)
+				{	cout<<"received m"<<m<<endl;
+					cout<<"Group Id not present"<<endl;
+					continue;
 				}
-				char* msg="end";
-				send(socketfd,msg,sizeof(msg),0);
-
+				if(m==2)
+				{	cout<<"received m"<<m<<endl;
+					cout<<"User Id not present in Group"<<endl;
+					continue;
+				}
+				else
+				{
+					cout<<"received m"<<m<<endl;
+					recv(socketfd,&ack,sizeof(ack),0);
+					int n=shaRecv.length();
+					int i=0;
+					while(i!=shaRecv.length())
+					{	cout<<"sending "<<shaRecv.substr(i,20)<<endl;
+						send(socketfd,(char*)shaRecv.substr(i,20).c_str(),20,0);
+						recv(socketfd,&ack,sizeof(ack),0);
+						i+=20;
+					}
+					char* msg="end";
+					send(socketfd,msg,sizeof(msg),0);
+					recv(socketfd,&ack,sizeof(ack),0);
+				}
 			}
 
-			else if(strcmp(comm,"yeye")==0)
-			{
-
-
-
-				char fileDownload[1024];
-				cout<<"enter filename to download"<<endl;
-				cin>>fileDownload;
+			/*else if(strcmp(comm,"download_file")==0)
+			{	send(socketfd,(char*)command.c_str(),command.length(),0);
+				char* gid;
+				gid=strtok(NULL," ");
+				char* fileDownload;
+				//cout<<"enter filename to download"<<endl;
+				//cin>>fileDownload;
+				fileDownload=strtok(NULL," ");
+				// char* dest;
+				// dest=strtok(NULL," ");
 				char buf[256]={0};
 				
-				send(socketfd,fileDownload,sizeof(fileDownload),0);
+				//send(socketfd,fileDownload,sizeof(fileDownload),0);
 				//int ack;
 				int file_size;
 				recv(socketfd,&file_size,sizeof(file_size),0);
 				cout<<file_size<<" in peer1"<<endl;
-				char newFile[100];
-				cout<<"enter filename for new file"<<endl;
-				cin>>newFile;
+				char* newFile;
+				//cout<<"enter filename for new file"<<endl;
+				newFile=strtok(NULL," ");
 				FILE *fp=fopen(newFile,"wb+");
 				// int file_size;
 				// recv(connectfd,&file_size,sizeof(file_size),0);
@@ -443,7 +483,23 @@ void* clientFunc(void* threadarg)
 					tempsize=tempsize-256;
 				}
 				fclose(fp);
-				int clientnum=3;
+				cout<<"Null initialised file created"<<endl;
+				int chunksize=512;
+				int no_of_chunks=ceil((float)file_size/chunksize);
+				int p=no_of_chunks;
+				cout<<"p is "<<p<<endl;
+				send(socketfd,&ack,sizeof(ack),0);
+				string recvSha="";
+				memset(msg,'\0',2048);
+				while(p--)
+				{	cout<<"p is "<<p<<endl;
+					recv(socketfd,&msg,2048,0);
+					recvSha+=msg;
+					memset(msg,'\0',2048);
+					send(socketfd,&ack,sizeof(ack),0);
+				}
+				cout<<recvSha<<endl;
+				/*int clientnum=3;
 				int portnum;
 				pthread_t clientAvail[clientnum];
 				int arr[3]={6000,7000,8900};
@@ -475,9 +531,9 @@ void* clientFunc(void* threadarg)
 					//pthread_join(clientAvail[i],NULL);
 				}
 				for(int i=0; i<3; i++)
-					pthread_join(clientAvail[i],NULL);
+					pthread_join(clientAvail[i],NULL);*/
 		
-			}
+			//}
 			cout<<"executed command"<<endl;
 		}
 	close(socketfd);
@@ -485,8 +541,8 @@ void* clientFunc(void* threadarg)
 }
 
 void* serverFunc(void* threadarg)
-{	struct csData *d;
-	d=(struct csData*)threadarg;
+{	struct serverData *d;
+	d=(struct serverData*)threadarg;
 	// cout<<"in server"<<endl;
 	// cout<<d->filename<<" filename"<<endl;
 	int socketfd=socket(PF_INET,SOCK_STREAM,0);
@@ -499,9 +555,9 @@ void* serverFunc(void* threadarg)
 	struct sockaddr_in serveraddr;
 	
 	serveraddr.sin_family=AF_INET;
-	serveraddr.sin_port=htons(d->port);
+	serveraddr.sin_port=htons(d->server_port);
 	//cout<<INADDR_ANY;
-	serveraddr.sin_addr.s_addr=inet_addr("127.0.0.1");
+	serveraddr.sin_addr.s_addr=inet_addr(d->server_ip.c_str());
 	// //cout<<serveraddr.sfamily<<endl;
 	// //cout<<serveraddr.sport<<endl;
 	// //cout<<serveraddr.saddr.addr<<endl;
@@ -606,16 +662,22 @@ void* serverFunc(void* threadarg)
 int main()
 {	pthread_t clientThread,serverThread;
 	cout<<"initialized"<<endl;
-	struct csData serverDetails;
+	struct serverData serverDetails;
 	cout<<"Port number for server"<<endl;
-	cin>>serverDetails.port;
+	cin>>serverDetails.server_port;
+	cout<<"IP for server"<<endl;
+	cin>>serverDetails.server_ip;
 	// cout<<"enter file path to be downloaded"<<endl;
 	// cin>>serverDetails.filename;
 	//cout<<serverDetails.filename<<" filename"<<endl;
 	struct csData clientDetails;
+	clientDetails.client_port=serverDetails.server_port;
+	clientDetails.client_ip=serverDetails.server_ip;
 	cout<<"Port number for client to connect tracker"<<endl;
-	cin>>clientDetails.port;
-	clientDetails.clientport=serverDetails.port;
+	cin>>clientDetails.tracker_port;
+	cout<<"IP for tracker"<<endl;
+	//clientDetails.clientport=serverDetails.port;
+	cin>>clientDetails.tracker_ip;
 	if(pthread_mutex_init(&locka,NULL) != 0)
 	{
 		cout<<"mutex init failed"<<endl;
