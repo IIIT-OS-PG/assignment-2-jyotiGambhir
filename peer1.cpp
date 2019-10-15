@@ -37,13 +37,15 @@ struct serverData{
 
 struct clientHandleDetails
 {
-	char* ipaddr;
+	string ipaddr;
 	int portnum;
-	char* filename;
-	int chunknum;
-	char* newfilename;
-	//SHA
+	string file_to_be_downloaded;
+	vector<int> chunksByClients;
+	string newFileCreate;
+	string sha;
 };
+
+map<string,vector<int>> chunks_for_file_map;
 
 string sha256_hash_string (unsigned char hash[SHA256_DIGEST_LENGTH])
 {
@@ -98,70 +100,142 @@ string sha256_of_chunks(FILE* f,int size)
 	return finalSha;
 }
 
-void* clientRequestServe(void* threadarg)
-{	struct threadData *threadStruct;
-	//cout<<((struct threadData *)threadarg)->filename<<"\n";
-	threadStruct=(struct threadData *)threadarg;
-	int connectfd=threadStruct->fd;
-	// cout<<" received "<<threadStruct->filename<<endl;
-	// string filename=threadStruct->filename;
-	// struct sockaddr_in serveraddr=threadStruct->sa;
-	// int addrlen=threadStruct->address;
-	// int connectfd;
-	// if((connectfd=accept(socketfd,(struct sockaddr*)&serveraddr,(socklen_t*)&addrlen)) < 0)
-	// {
-	// 	perror("Error in accepting");
-	// 	exit(EXIT_FAILURE);
-	// }
-	//cout<<"accepted"<<endl;
-	cout<<"accepted in server"<<endl;
-	//cout<<filename<<" in serve request"<<endl;
-	
-	// fseek(fp,0,SEEK_END);
-	// int size=ftell(fp);
-	// rewind(fp);
-	char filename[100];
-	int c;
-	//recv(connectfd,filename,sizeof(filename),0);
-	// recv(connectfd,&filename,sizeof(filename),0);
-	
-	if(recv(connectfd,&c,sizeof(c),0) < 0)
+void printFetchedChunks(vector<vector<int>> kk)
+{
+	for(int i=0; i<kk.size(); i++)
 	{
-		perror("error in receiving");
-		exit(EXIT_FAILURE);
+		for(int j=0; j<kk[i].size(); j++)
+			cout<<kk[i][j]<<" ";
+		cout<<endl;
 	}
-	int ack;
-	send(connectfd,&ack,sizeof(ack),0);
-	recv(connectfd,filename,sizeof(filename),0);
-	cout<<"received filename "<<filename<<endl;
-	cout<<"received chunkum "<<c<<endl;
-	FILE *fp=fopen(filename,"rb");
+}
 
-	fseek(fp,(c-1)*512,SEEK_SET);
-	//send(connectfd,&size,sizeof(size),0);
-	int n;
-	int size=512;
-	char buf[256]={0};
-	while((n=fread(buf,sizeof(char),256,fp)) > 0 && size>0)
+void* clientRequestServe(void* threadarg)
+{	//cout<<"clientRequestServe:"<<endl;
+	struct threadData *threadStruct;
+	//cout<<((struct threadData *)threadarg)->filename<<"\n";
+	//threadStruct=(struct threadData *)malloc(sizeof(struct threadData));
+	threadStruct=(struct threadData *)threadarg;
+	int ack=1;
+	int connectfd=threadStruct->fd;
+	// cout<<"connect fd created "<<endl;
+	char msg[2048]={'\0'};
+	recv(connectfd,&msg,2048,0);
+	//int value=10;
+	//recv(connectfd,&value,sizeof(value),0);
+	// cout<<"msg received"<<msg<<endl;
+	if(strcmp(msg,"request_for_vector")==0)
+	//if(value==1)
 	{
-		send(connectfd,buf,n,0);
-		cout<<"inn buff"<<buf<<endl;
-		memset(buf,'\0',256);
-		size=size-n;
+		send(connectfd,&ack,sizeof(ack),0);
+		char filename[2048];
+		recv(connectfd,&filename,2048,0);
+		cout<<filename<<"filename is"<<endl;
+		string filestr=filename;
+		// cout<<"IN SERVER filename "<<filestr<<endl;
+		int no_of_chunks=chunks_for_file_map[filename].size();
+		send(connectfd,&no_of_chunks,sizeof(no_of_chunks),0);
+		// cout<<"IN SERVER no of chunks to be sent "<<no_of_chunks<<endl;
+		recv(connectfd,&ack,sizeof(ack),0);
+		int i=0;
+		int val;
+		while(i!=no_of_chunks)
+		{	val=chunks_for_file_map[filename][i];
+			// cout<<"IN SERVER sending "<<val<<endl;
+			send(connectfd,&val,sizeof(val),0);
+			i++;
+			recv(connectfd,&ack,sizeof(ack),0);
+		}
+		send(connectfd,&ack,sizeof(ack),0);
+		// cout<<"sending complete"<<endl;
 	}
-	int ack1;
-	recv(connectfd,&ack1,sizeof(ack1),0);
-	fclose(fp);
-	close(connectfd);
-	//close(socketfd);
+	else if(strcmp(msg,"request_for_data")==0)
+	//else
+	{
+		// cout<<" received "<<threadStruct->filename<<endl;
+		// string filename=threadStruct->filename;
+		// struct sockaddr_in serveraddr=threadStruct->sa;
+		// int addrlen=threadStruct->address;
+		// int connectfd;
+		// if((connectfd=accept(socketfd,(struct sockaddr*)&serveraddr,(socklen_t*)&addrlen)) < 0)
+		// {
+		// 	perror("Error in accepting");
+		// 	exit(EXIT_FAILURE);
+		// }
+		//cout<<"accepted"<<endl;
+		// cout<<"accepted in server"<<endl;
+		//cout<<filename<<" in serve request"<<endl;
+		
+		// fseek(fp,0,SEEK_END);
+		// int size=ftell(fp);
+		// rewind(fp);
+		send(connectfd,&ack,sizeof(ack),0);
+		char filename[100];
+		int loops;
+		//recv(connectfd,filename,sizeof(filename),0);
+		// recv(connectfd,&filename,sizeof(filename),0);
+		
+		if(recv(connectfd,&loops,sizeof(loops),0) < 0)
+		{
+			perror("error in receiving");
+			exit(EXIT_FAILURE);
+		}
+		// cout<<"loops:"<<loops<<endl;
+		//int ack;
+		// cout<<"ack sent"<<ack<<endl;
+		send(connectfd,&ack,sizeof(ack),0);
+		// cout<<"connectfd "<<connectfd<<endl;
+		int p=0;
+		int c;
+			
+			recv(connectfd,&c,sizeof(c),0);
+			// cout<<"received chunkum "<<c<<endl;
+			send(connectfd,&ack,sizeof(ack),0);
+			// cout<<"ack2 sent"<<endl;
+			recv(connectfd,filename,sizeof(filename),0);
+			// cout<<"received filename "<<filename<<endl;
+			//cout<<"received chunkum "<<c<<endl;
+			FILE *fp=fopen(filename,"rb");
+
+			fseek(fp,(c-1)*512,SEEK_SET);
+			//send(connectfd,&size,sizeof(size),0);
+			int n;
+			int size=512;
+			char buf[256]={0};
+			while((n=fread(buf,sizeof(char),256,fp)) > 0 && size>0)
+			{
+				// cout << "sending filebytecnt: " << n <<endl;
+				send(connectfd,buf,n,0);
+				// cout<<"inn buff"<<buf<<endl;
+				memset(buf,'\0',256);
+				size=size-n;
+				recv(connectfd,&c,sizeof(c),0);
+
+			}
+			int ack1;
+			fclose(fp);
+			send(connectfd,&ack1,sizeof(ack1),0);
+
+		close(connectfd);
+		//close(socketfd);
+	}
 }
 
 void* clientDownloadChunk(void* clientDetails)
-{	cout<<"entered clientDownloadChunk:"<<endl;
-	struct clientHandleDetails* cdetails;
+{	struct clientHandleDetails* cdetails;
 	cdetails=(struct clientHandleDetails*)clientDetails;
-	int socketfd=socket(AF_INET,SOCK_STREAM,0);
+	int i=0;
+		int no_of_loops=cdetails->chunksByClients.size();
+	char buf[256];
+// cout<<"no of loops "<<no_of_loops<<endl;
+	while(i!=no_of_loops)
+	{	
+	// cout<<"entered clientDownloadChunk:"<<endl;
 	
+	char* msg;
+	
+	int socketfd=socket(AF_INET,SOCK_STREAM,0);
+	int ack=0;
 	if(socketfd<0)
 	{
 		perror("socket failed");
@@ -170,69 +244,213 @@ void* clientDownloadChunk(void* clientDetails)
 	struct sockaddr_in serveraddr;
 	serveraddr.sin_family=AF_INET;
 	serveraddr.sin_port=htons(cdetails->portnum);
-	serveraddr.sin_addr.s_addr=inet_addr(cdetails->ipaddr);
-	char buf[256]={0};
+	serveraddr.sin_addr.s_addr=inet_addr(cdetails->ipaddr.c_str());
 	int m;
 	// cout<<"Press 1 to conitnue downloading"<<endl;
 	// cin>>m;
-		cout<<"port is"<<cdetails->portnum<<endl;
-		cout<<"filename is "<<cdetails->filename;
+		// cout<<"port is"<<cdetails->portnum<<endl;
+		// cout<<"filename is "<<cdetails->file_to_be_downloaded;
 	if(connect(socketfd,(struct sockaddr*)&serveraddr,sizeof(serveraddr)) < 0)
 	{
 		perror("unable to connect");
 		exit(EXIT_FAILURE);
 	}
-	cout<<"connected"<<endl;
+	// cout<<"connected"<<endl;
+	msg="request_for_data";
+	send(socketfd,msg,2048,0);
 	//cout<<"file in client thread "<<cdetails->filename<<endl;
 	//cout<<"chunknum is "<<cdetails->chunknum<<endl;
 	//char* st="hi";
 	//send(socketfd,&st,sizeof(st),0);
-	char* filedwn=cdetails->filename;
-	
-	//send(socketfd,filedwn,sizeof(filedwn),0);
-	int cnum=cdetails->chunknum;
-	cout<<"cnum is "<<cnum<<endl;
-	//int pp=3;
-	if(send(socketfd,&cnum,sizeof(cnum),0)<0)
-	{	perror("error in sending");
-		exit(EXIT_FAILURE);
-	}
-	int ack;
+	// cout<<"msg sent"<<endl;
 	recv(socketfd,&ack,sizeof(ack),0);
-	send(socketfd,filedwn,sizeof(filedwn),0);
-	cout<<"file name is "<<filedwn<<endl;
-	//send(socketfd,&cnum,sizeof(cnum),0);
-	pthread_mutex_lock(&locka);
-	FILE *fp=fopen(cdetails->newfilename,"rab+");
-	int chunksize=512;
-	int n;
-
+	char* filedwn=(char*)cdetails->file_to_be_downloaded.c_str();
+	//send(socketfd,filedwn,sizeof(filedwn),0);
+	int nl=1;
+	send(socketfd,&nl,sizeof(nl),0);
 	
-	rewind(fp);
-	fseek(fp,(cdetails->chunknum-1)*512,SEEK_SET);
-	
-	
-	while((n=recv(socketfd,buf,256,0)) > 0 && chunksize > 0)
-	{
-		fwrite(buf,sizeof(char),n,fp);
-		cout<<"Buff"<<buf<<endl;
 		memset(buf,'\0',256);
 
-		chunksize=chunksize-n;
-		cout<<"CHUNKSIZE "<<chunksize<<endl;
+		recv(socketfd,&ack,sizeof(ack),0);
+		int cnum=cdetails->chunksByClients[i];
+		// cout<<"cnum is "<<cnum<<endl;
+		//int pp=3;
+		int x = send(socketfd,&cnum,sizeof(cnum),0);
+		// cout << "sent bytecount: " << x << endl;
+		if(x<0)
+		{	perror("error in sending");
+			exit(EXIT_FAILURE);
+		}
+		///////////////////break
+		//int ack;
+		// cout<<"receive ack"<<endl;
+		recv(socketfd,&ack,sizeof(ack),0);
+		// cout<<"ack received"<<endl;
+		// cout<<"file name is 1 "<<filedwn<<endl;
+		send(socketfd,filedwn,2048,0);
+		// cout<<"file name is "<<filedwn<<endl;
+		//send(socketfd,&cnum,sizeof(cnum),0);
+		pthread_mutex_lock(&locka);
+		FILE *fp=fopen((char*)cdetails->newFileCreate.c_str(),"rab+");
+		int chunksize=512;
+		int n;
+
 		
-	} 
-	fclose(fp);
-	int ack2=1;
-	send(socketfd,&ack2,sizeof(ack2),0);
-	cout<<"releasing lock"<<endl;
-	pthread_mutex_unlock(&locka);
-	cout<<"lock released"<<endl;
-	
-	close(socketfd);
+		rewind(fp);
+		fseek(fp,(cnum-1)*512,SEEK_SET);
+		
+		
+		while((n=recv(socketfd,buf,256,0)) > 0 && chunksize > 0)
+		{	
+			// cout<<"receiving bytes: "<<n<<endl;
+			fwrite(buf,sizeof(char),n,fp);
+			// cout<<"Buff"<<buf<<endl;
+			memset(buf,'\0',256);
+
+			chunksize=chunksize-n;
+			// cout<<"CHUNKSIZE "<<chunksize<<endl;
+			send(socketfd,&ack,sizeof(ack),0);
+			// cout<<"send ack"<<endl;
+		} 
+		memset(buf,'\0',256);
+
+		fclose(fp);
+		int ack2=1;
+		recv(socketfd,&ack2,sizeof(ack2),0);
+		// cout<<"releasing lock"<<endl;
+		pthread_mutex_unlock(&locka);
+		// cout<<"lock released"<<endl;
+		i++;
+
+		close(socketfd);
+
+	}
 
 }
 
+void printMapOfFiles()
+{
+	for(auto i=chunks_for_file_map.begin(); i!=chunks_for_file_map.end(); i++ )
+	{
+		cout<<"filename "<<i->first<<endl;
+		cout<<"list of chunks is "<<endl;
+		for(int j=0; j<i->second.size(); j++)
+			cout<<chunks_for_file_map[i->first][j]<<endl;
+	}
+}
+
+void connectAndFetchChunks(vector<pair<string,int>> listIpPort, vector<vector<int>>& files_with_chunks, string filename)
+{	
+	// cout<<"recevied filename is"<<filename<<endl;
+	// cout<<"connectAndFetchChunks:"<<endl;
+	
+	char *msg;
+	int nw=1;
+	int ack=0;
+	
+	cout<<"iterate through ip ports"<<endl;
+	for(int i=0; i<listIpPort.size(); i++)
+	{	cout<<"port "<<listIpPort[i].second<<" ip "<<listIpPort[i].first<<endl;
+		int socketfd=socket(AF_INET,SOCK_STREAM,0);
+		if(socketfd<0)
+		{
+			perror("socket failed");
+			exit(EXIT_FAILURE);
+		}
+		
+		struct sockaddr_in serveraddr;
+
+		memset(&serveraddr,'\0',sizeof(serveraddr));
+		serveraddr.sin_family=AF_INET;
+		serveraddr.sin_port=htons(listIpPort[i].second);
+		serveraddr.sin_addr.s_addr=inet_addr(listIpPort[i].first.c_str());
+		if(setsockopt(socketfd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &nw, sizeof(nw)))
+			{
+				cout<<"set socket opt"<<endl;
+				pthread_exit(NULL);
+			}
+		
+		if(connect(socketfd,(struct sockaddr*)&serveraddr,sizeof(serveraddr)) < 0)
+		{
+			perror("unable to connect");
+			exit(EXIT_FAILURE);
+		}
+		msg="request_for_vector";
+		send(socketfd,msg,2048,0);
+		// int value=1;
+		// send(socketfd,&value,sizeof(value),0);
+		// cout<<"value sent"<<value<<endl;
+		//memset(msg,'\0',2048);
+		//cout<<"waiting for ack"<<endl;
+		recv(socketfd,&ack,sizeof(ack),0);
+		cout<<"filename sent"<<filename<<endl;
+		send(socketfd,(char*)filename.c_str(),filename.length(),0);
+		int vectorSize;
+		recv(socketfd,&vectorSize,sizeof(vectorSize),0);
+		cout<<"vector size received"<<vectorSize<<endl;
+		vector<int> chunk_list(vectorSize);
+		cout<<"vector created"<<endl;
+		send(socketfd,&ack,sizeof(ack),0);
+		cout<<"Ack sent"<<endl;
+		int it=0;
+		int val;
+		while(it!=vectorSize)
+		{	cout<<"index is "<<it<<endl;
+			recv(socketfd,&val,sizeof(val),0);
+			chunk_list[it]=val;
+			it++;
+			send(socketfd,&ack,sizeof(ack),0);
+		}
+		cout<<"vector created"<<endl;
+		recv(socketfd,&ack,sizeof(ack),0);
+		files_with_chunks.push_back(chunk_list);
+		cout<<"vector pushed"<<endl;
+		close(socketfd);
+	}
+	
+
+}
+
+void pieceSelectionAlgo(vector<vector<int>>& completeVec, vector<vector<int>>& finalVec, int no_of_chunks)
+{
+	vector<int> vis(no_of_chunks+1,0);
+	int chunk_visited=0;
+	int flag=0;
+	while(1)
+	{
+		for(int i=0; i<completeVec.size(); i++)
+		{
+
+			if(chunk_visited==no_of_chunks)
+			{	flag=1;
+				break;
+			}
+			else if(completeVec[i].size()>0 && vis[completeVec[i][0]]==0)
+			{
+				vis[completeVec[i][0]]=1;
+				finalVec[i].push_back(completeVec[i][0]);
+				completeVec[i].erase(completeVec[i].begin());
+				chunk_visited++;
+			}
+			else if(completeVec[i].size()>0 && vis[completeVec[i][0]]==1)
+			{
+				while(completeVec[i].size()>0 && vis[completeVec[i][0]]==1)
+				{
+					completeVec[i].erase(completeVec[i].begin());
+				}
+				if(completeVec[i].size()>0 && vis[completeVec[i][0]]==0)
+				{
+					vis[completeVec[i][0]]=1;
+					finalVec[i].push_back(completeVec[i][0]);
+					completeVec[i].erase(completeVec[i].begin());
+					chunk_visited++;
+				}
+			}
+		}
+		if(flag==1)
+			break;
+	}
+}
 
 void* clientFunc(void* threadarg)
 {	struct csData *d;
@@ -401,6 +619,34 @@ void* clientFunc(void* threadarg)
 				//}
 			}
 
+			else if(strcmp(comm,"list_files")==0)
+			{
+				send(socketfd,(char*)command.c_str(),command.length(),0);
+				char req[2048];
+				recv(socketfd,&req,2048,0);
+				if(strcmp(req,"Group_Id_Doesn't_Exists")==0)
+				{
+					cout<<"Group Id Doesn't Exist"<<endl;
+					continue;
+				}
+				else
+				{
+					int num;
+					send(socketfd,&num,sizeof(num),0);
+					int i=0;
+					while(i!=num)
+					{
+						recv(socketfd,&req,2048,0);
+						if(strcmp(req,"ignore")==0)
+							continue;
+						else
+							cout<<req<<endl;
+						memset(req,'\0',1024);
+					}
+					send(socketfd,&ack,sizeof(ack),0);
+				}
+			}
+
 			else if(strcmp(comm,"upload_file")==0)
 			{
 				cout<<"entered upload file command";
@@ -416,6 +662,7 @@ void* clientFunc(void* threadarg)
 				string sendData=command+" "+to_string(size);
 				cout<<sendData<<endl;
 				cout<<shaRecv.length()<<" "<<shaRecv<<endl;
+
 				send(socketfd,(char*)sendData.c_str(),sendData.length(),0);
 				int m;
 				recv(socketfd,&m,sizeof(m),0);
@@ -433,6 +680,12 @@ void* clientFunc(void* threadarg)
 				{
 					cout<<"received m"<<m<<endl;
 					recv(socketfd,&ack,sizeof(ack),0);
+					int number_of_chunks=shaRecv.length()/20;
+					vector<int> chunks_of_file(number_of_chunks);
+					for(int i=0;i<number_of_chunks;i++)
+						chunks_of_file[i]=i+1;
+					string file_to_be_uploaded_str=file_to_be_uploaded;
+					chunks_for_file_map.insert({file_to_be_uploaded_str,chunks_of_file});
 					int n=shaRecv.length();
 					int i=0;
 					while(i!=shaRecv.length())
@@ -443,11 +696,12 @@ void* clientFunc(void* threadarg)
 					}
 					char* msg="end";
 					send(socketfd,msg,sizeof(msg),0);
+					printMapOfFiles();
 					recv(socketfd,&ack,sizeof(ack),0);
 				}
 			}
 
-			/*else if(strcmp(comm,"download_file")==0)
+			else if(strcmp(comm,"download_file")==0)
 			{	send(socketfd,(char*)command.c_str(),command.length(),0);
 				char* gid;
 				gid=strtok(NULL," ");
@@ -499,13 +753,50 @@ void* clientFunc(void* threadarg)
 					send(socketfd,&ack,sizeof(ack),0);
 				}
 				cout<<recvSha<<endl;
-				/*int clientnum=3;
-				int portnum;
-				pthread_t clientAvail[clientnum];
-				int arr[3]={6000,7000,8900};
-				int ch[3]={3,2,1};
+				int num_of_clients;
+				recv(socketfd,&num_of_clients,sizeof(num_of_clients),0);
+				cout<<"no of clients "<<num_of_clients<<endl;
+				vector<pair<string,int>> listipport;
+				//int pl=num_of_clients;
+				memset(msg,'\0',2048);
+				cout<<"starting to receive"<<endl;
+				send(socketfd,&ack,sizeof(ack),0);
+				for(int lp=0; lp<num_of_clients; lp++)
+				{	cout<<"in for"<<endl;
+					recv(socketfd,&msg,2048,0);
+					char* mg=msg;
+					string portclient=strtok(mg," ");
+					cout<<"portclient "<<portclient<<endl;
+					int port_of_client=stoi(portclient);
+					cout<<"port_client "<<port_of_client<<endl;
+					string ipstring=strtok(NULL," ");
+					
+					cout<<"ip"<<ipstring<<endl;
+					listipport.push_back(make_pair(ipstring,port_of_client));
+					cout<<"pushed"<<endl;
+					memset(msg,'\0',2048);
+					send(socketfd,&ack,sizeof(ack),0);
+				}
+				cout<<"ip port of clients"<<endl;
+				for(int kk=0; kk<num_of_clients; kk++)
+					cout<<listipport[kk].first<<" "<<listipport[kk].second<<endl;
+
+				vector<vector<int>> files_with_chunks;
+				string file_to_be_downloaded=fileDownload;
+				cout<<"file to be downloaded is "<<file_to_be_downloaded<<endl;
+				connectAndFetchChunks(listipport,files_with_chunks,file_to_be_downloaded);
+				printFetchedChunks(files_with_chunks);
+				vector<vector<int>> finalVec(listipport.size());
+				pieceSelectionAlgo(files_with_chunks,finalVec,no_of_chunks);
+				cout<<"after piece selection"<<endl;
+				printFetchedChunks(finalVec);
+				// int clientnum=3;
+				// int portnum;
+				pthread_t clientAvail[num_of_clients];
+				// int arr[3]={6000,7000,8900};
+				// int ch[3]={3,2,1};
 				int i=0;
-				while(clientnum--)
+				while(i!=num_of_clients)
 				{	//struct clientHandleDetails cd;
 					struct clientHandleDetails *cd = (struct  clientHandleDetails*)malloc(sizeof(struct clientHandleDetails));
 					// cout<<"Enter client port details to fetch data from:"<<endl;
@@ -513,11 +804,12 @@ void* clientFunc(void* threadarg)
 					// cout<<"Enter chunknum"<<endl;
 					// //int a;
 					// cin>>cd.chunknum;
-					cd->portnum=arr[i];
-					cd->chunknum=ch[i];
-					cd->ipaddr="127.0.0.1";
-					cd->filename=fileDownload;
-					cd->newfilename=newFile;
+					cd->portnum=listipport[i].second;
+					cd->ipaddr=listipport[i].first;
+					cd->file_to_be_downloaded=fileDownload;
+					cd->newFileCreate=newFile;
+					cd->chunksByClients=finalVec[i];
+					cd->sha=recvSha;
 					//pthread_t clientAvail[i];
 					// cout<<"in main port number "<<cd.portnum;
 					// cout<<"in main ip "<<cd.ipaddr;
@@ -530,10 +822,17 @@ void* clientFunc(void* threadarg)
 					i++;
 					//pthread_join(clientAvail[i],NULL);
 				}
-				for(int i=0; i<3; i++)
-					pthread_join(clientAvail[i],NULL);*/
+				for(int i=0; i<num_of_clients; i++)
+					pthread_join(clientAvail[i],NULL);
 		
-			//}
+			}
+			else if(strcmp(comm,"logout")==0)
+			{
+				send(socketfd,(char*)command.c_str(),command.length(),0);
+				recv(socketfd,&ack,sizeof(ack),0);
+				pthread_exit(NULL);
+			}
+
 			cout<<"executed command"<<endl;
 		}
 	close(socketfd);
@@ -584,17 +883,20 @@ void* serverFunc(void* threadarg)
 	int connectfd;
 	//while(1)
 	//{
+		pthread_t newThread[1000];
+		int i=0;
 		while((connectfd=accept(socketfd,(struct sockaddr*)&serveraddr,(socklen_t*)&addrlen)) > 0)
 		{	cout<<"entered"<<endl;
-			struct threadData th;
-			th.fd=connectfd;
+			struct threadData *th=(struct threadData*)malloc(sizeof(struct threadData));
+			th->fd=connectfd;
 			//th.filename=d->filename;
 			// th.sa=serveraddr;
 			// th.address=addrlen;
 			//cout<<th.filename<<" craeting thread"<<endl;
-			pthread_t newThread;
-			pthread_create(&newThread,NULL,clientRequestServe,(void*)&th);
-			pthread_detach(newThread);
+			
+			pthread_create(&newThread[i],NULL,clientRequestServe,(void*)th);
+			pthread_detach(newThread[i]);
+			i++;
 		// perror("Error in accepting");
 		// exit(EXIT_FAILURE);
 		}

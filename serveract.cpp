@@ -147,6 +147,11 @@ void* clientRequestServe(void* threadarg)
 		cout<<command<<endl;
 		int ack=1;
 		char* comm=strtok(command," ");
+		if(comm==NULL)
+		{
+			pthread_exit(NULL);
+		}
+		
 		if(strcmp(comm,"create_user") == 0)
 		{	char* msg;
 			cout<<"in create user"<<endl;
@@ -265,31 +270,33 @@ void* clientRequestServe(void* threadarg)
 		}
 
 		else if(strcmp(comm,"leave_group") == 0)
-		{// {	char* msg;
-		// 	string gid=strtok(NULL," ");
-		// 	if(!checkGroupIdExist(gid))
-		// 	{	msg="Group Id Doesn't Exists";
-		// 		// cout<<msg<<endl;
-		// 		memset(command,'\0',sizeof(command));
-		// 		send(connectfd,msg,2048,0);
-		// 		continue;
-		// 	}
-		// 	else
-		// 	{	//remove user from users list in groupFileUserMap
-		// 		auto it=groupFileUserMap.find(gid);
-		// 		auto itr=find(it->second->userslist.begin(),it->second->userslist.end(),usr);
-		// 		it->second->userslist.erase(itr);
-		// 		//remove user from groupFile Map
-		// 		for(unordered_map<string,struct groupFileStruct*>::iterator i=groupFileMap.begin(); i!=groupFileMap.end(); i++)
-		// 		{
-		// 			auto pp=find(i->second->clientWithFiles.begin(),i->second->clientWithFiles.end(),usr);
-		// 			i->second->clientWithFiles.erase(pp);
-		// 		}
-		// 		printgroupFileUserMap();
-		// 		msg="Left Group Successfully";
-		// 		memset(command,'\0',sizeof(command));
-		// 		send(connectfd,msg,2048,0);
-		// 	}
+		{
+			char* msg;
+			string gid=strtok(NULL," ");
+			if(!checkGroupIdExist(gid))
+			{	msg="Group Id Doesn't Exists";
+				// cout<<msg<<endl;
+				memset(command,'\0',sizeof(command));
+				send(connectfd,msg,2048,0);
+				continue;
+			}
+			else
+			{	//remove user from users list in groupFileUserMap
+				auto it=groupFileUserMap.find(gid);
+				auto itr=find(it->second->userslist.begin(),it->second->userslist.end(),usr);
+				it->second->userslist.erase(itr);
+				//remove user from groupFile Map
+				for(unordered_map<string,struct groupFileStruct*>::iterator i=groupFileMap.begin(); i!=groupFileMap.end(); i++)
+				{
+					//if(groupFileMap->first == gid)
+					auto pp=find(i->second->clientWithFiles.begin(),i->second->clientWithFiles.end(),usr);
+					i->second->clientWithFiles.erase(pp);
+				}
+				printgroupFileUserMap();
+				msg="Left Group Successfully";
+				memset(command,'\0',sizeof(command));
+				send(connectfd,msg,2048,0);
+			}
 		}
 
 		else if(strcmp(comm,"list_requests")==0)
@@ -392,6 +399,45 @@ void* clientRequestServe(void* threadarg)
 				
 		}
 
+		else if(strcmp(comm,"list_files")==0)
+		{
+			char* msg;
+			cout<<"in list files"<<endl;
+			string gid=strtok(NULL," ");
+			
+			if(!checkGroupIdExist(gid))
+			{	msg="Group_Id_Doesn't_Exists";
+				// cout<<msg<<endl;
+				memset(command,'\0',sizeof(command));
+				send(connectfd,msg,2048,0);
+				continue;
+			}
+			else
+			{
+				msg="Group_Id_Exists";
+				// cout<<msg<<endl;
+				memset(command,'\0',sizeof(command));
+				send(connectfd,msg,2048,0);
+				int num=groupFileUserMap[gid]->fileslist.size();
+				send(connectfd,&num,sizeof(num),0);
+				for(int i=0; i<groupFileUserMap[gid]->fileslist.size();i++)
+				{
+					if(groupFileUserMap[gid]->fileslist[i].second==1)
+					{	
+						string st=groupFileUserMap[gid]->fileslist[i].first;
+						send(connectfd,(char*)st.c_str(),sizeof(st),0);
+					}
+					else
+					{
+						string pp="ignore";
+						send(connectfd,(char*)pp.c_str(),sizeof(pp),0);
+					}
+				}
+				recv(connectfd,&ack,sizeof(ack),0);
+			}
+
+		}
+
 		else if(strcmp(comm,"upload_file")==0)
 		{	string filen;
 			cout<<"in upload_file"<<endl;
@@ -474,14 +520,14 @@ void* clientRequestServe(void* threadarg)
 				// else
 				// 	pptr->second=1;
 				printgroupFileUserMap();
-				cout<<"Print group filr map"<<endl;
+				cout<<"Print group file map"<<endl;
 				printgroupFileMap();
 				send(connectfd,&ack,sizeof(ack),0);
 				cout<<"completed uploaded"<<endl;
 				// fs->clientip=
 			}
 		}
-		/*else if(strcmp(comm,"download_file")==0)
+		else if(strcmp(comm,"download_file")==0)
 		{	char* filename;
 			char* gid;
 			gid=strtok(NULL," ");
@@ -514,13 +560,40 @@ void* clientRequestServe(void* threadarg)
 				i+=20;
 				recv(connectfd,&ack,sizeof(ack),0);
 			}
+			vector<pair<string,string>> list_of_ip;
 			cout<<"number of clients is "<<groupFileMap[gidstr+filenamestr]->clientWithFiles.size()<<endl;
 			vector<string> list_of_clients=groupFileMap[gidstr+filenamestr]->clientWithFiles;
-			// for(int im=0; im<list_of_clients.size(); im++)
-			// 	cout<<list_of_clients[im]<<endl;
-			vector<pair<string,string>> list_of_ip;
-			for()
-		}*/
+			for(int im=0; im<list_of_clients.size(); im++)
+			{	
+				cout<<list_of_clients[im]<<endl;
+				if(userDetailsMap[list_of_clients[im]]->flag)
+				{
+					list_of_ip.push_back(make_pair(userDetailsMap[list_of_clients[im]]->clientport,userDetailsMap[list_of_clients[im]]->clientip));
+				}
+			}
+			for(int ti=0; ti<list_of_ip.size(); ti++)
+				cout<<list_of_ip[ti].first<<" "<<list_of_ip[ti].second<<endl;
+			int num_of_clients=list_of_ip.size();
+			cout<<num_of_clients<<"num_of_clients"<<endl;
+			send(connectfd,&num_of_clients,sizeof(num_of_clients),0);
+			//int pl=num_of_clients;
+			recv(connectfd,&ack,sizeof(ack),0);
+			string val1;
+			for(int lp=0; lp<num_of_clients; lp++)
+			{	
+				
+				val1=list_of_ip[lp].first+" "+list_of_ip[lp].second;
+				cout<<val1<<endl;
+				send(connectfd,(char*)val1.c_str(),val1.length(),0);
+				recv(connectfd,&ack,sizeof(ack),0);
+			}
+			
+		}
+		else if(strcmp(comm,"logout")==0)
+		{
+			userDetailsMap[usr]->flag=0;
+			send(connectfd,&ack,sizeof(ack),0);
+		}
 		cout<<"execute command"<<endl;
 	}
 	close(connectfd);
